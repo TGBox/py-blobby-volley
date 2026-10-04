@@ -1,6 +1,12 @@
 """Unit tests for Blobby Volley physics, collisions, and scoring rules."""
 
 import unittest
+import sys
+from pathlib import Path
+
+# Ensure src is on sys.path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+
 from blobby_volley.constants import (
     GROUND_Y,
     NET_X,

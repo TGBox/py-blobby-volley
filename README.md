@@ -22,12 +22,13 @@ Eine leichtgewichtige, eigenständige und originalgetreue Python-Adaption des be
 ## Steuerung
 
 | Aktion | Spieler 1 (Grün, links) | Spieler 2 (Rot, rechts) |
-|---|---|---|
+| --- | --- | --- |
 | **Nach links** | `A` | `Pfeiltaste Links` |
 | **Nach rechts** | `D` | `Pfeiltaste Rechts` |
 | **Springen** | `W` | `Pfeiltaste Hoch` |
 
 ### Allgemeine Tasten
+
 - `F11`: Vollbildmodus an- / ausschalten
 - `ESC`: Pause / Zurück zum Hauptmenü
 - `R`: Spiel neu starten
@@ -37,21 +38,26 @@ Eine leichtgewichtige, eigenständige und originalgetreue Python-Adaption des be
 ## Installation & Start
 
 ### Voraussetzungen
+
 - Python 3.10 oder neuer
 - `pygame-ce >= 2.5.0`
 
 ### Installation
+
 ```powershell
 pip install pygame-ce
 ```
 
 ### Spiel starten
+
 Direkt mit dem beiliegenden Skript:
+
 ```powershell
 python run_game.py
 ```
 
 Oder als Modul:
+
 ```powershell
 python -m blobby_volley.main
 ```
@@ -61,6 +67,7 @@ python -m blobby_volley.main
 ## Tests ausführen
 
 Die Physik und Spielregeln werden durch automatisierte Unit-Tests abgedeckt:
+
 ```powershell
 python -m unittest discover -s tests
 ```
@@ -68,4 +75,5 @@ python -m unittest discover -s tests
 ---
 
 ## Lizenz
+
 Open-Source (MIT). Viel Spaß beim Spielen!
