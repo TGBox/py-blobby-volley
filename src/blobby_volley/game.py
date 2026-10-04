@@ -21,11 +21,13 @@ class GameState:
         self,
         mode: str = "vs_bot",
         difficulty: str = "Mittel",
+        jelly_mode: str = "Normal",
         sound_manager: Optional[SoundManager] = None,
     ):
         self.mode = mode
-        self.blob_left = Blob(x=SERVE_LEFT_X, is_left=True)
-        self.blob_right = Blob(x=SERVE_RIGHT_X, is_left=False)
+        self.jelly_mode = jelly_mode
+        self.blob_left = Blob(x=SERVE_LEFT_X, is_left=True, jelly_mode=jelly_mode)
+        self.blob_right = Blob(x=SERVE_RIGHT_X, is_left=False, jelly_mode=jelly_mode)
         self.ball = Ball(x=SERVE_LEFT_X, y=SERVE_BALL_Y)
         self.physics = PhysicsWorld(self.blob_left, self.blob_right, self.ball)
         self.audio = sound_manager or SoundManager()
@@ -43,6 +45,13 @@ class GameState:
         self.rally_in_progress = False
 
         self._reset_positions_for_serve()
+
+    def toggle_jelly_mode(self) -> str:
+        """Switch between Normal and Extrem (Slime) deformation profiles."""
+        self.jelly_mode = "Extrem" if self.jelly_mode == "Normal" else "Normal"
+        self.blob_left.set_jelly_mode(self.jelly_mode)
+        self.blob_right.set_jelly_mode(self.jelly_mode)
+        return self.jelly_mode
 
     def set_difficulty(self, diff: str) -> None:
         self.ai.set_difficulty(diff)

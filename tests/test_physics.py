@@ -124,6 +124,48 @@ class TestGameRules(unittest.TestCase):
             game.update(dt=0.016, p1_dir=1.0, p1_jump=False)
         self.assertIsNotNone(game.ball.x)
 
+    def test_blob_jelly_dynamics(self):
+        """Test spring-damper oscillator behavior for jumps, landings, and impacts."""
+        blob = Blob(x=200, is_left=True, jelly_mode="Normal")
+        self.assertAlmostEqual(blob.scale_y, 1.0, places=2)
+        self.assertAlmostEqual(blob.scale_x, 1.0, places=2)
+
+        # 1. Jump stretch excitation
+        blob.update(dt=0.016, move_dir=0.0, jump_pressed=True)
+        self.assertGreater(blob.squish_vy, 0.0)
+
+        # Step a few frames and verify vertical elongation
+        for _ in range(5):
+            blob.update(dt=0.016, move_dir=0.0, jump_pressed=False)
+        self.assertGreater(blob.scale_y, 1.0)
+        self.assertLess(blob.scale_x, 1.0)  # Volume preservation
+
+        # 2. Impact deformation
+        blob.apply_impact(nx=0.7, ny=0.7, impact_speed=300.0)
+        self.assertNotEqual(blob.impact_vx, 0.0)
+        self.assertNotEqual(blob.impact_vy, 0.0)
+
+        # 3. Damped recovery back towards rest state
+        for _ in range(180):
+            blob.update(dt=0.016, move_dir=0.0, jump_pressed=False)
+        self.assertAlmostEqual(blob.impact_x, 0.0, delta=2.0)
+        self.assertAlmostEqual(blob.impact_y, 0.0, delta=2.0)
+
+    def test_jelly_mode_toggle(self):
+        """Test switching between Normal and Extrem profiles."""
+        game = GameState(mode="vs_bot", jelly_mode="Normal")
+        self.assertEqual(game.jelly_mode, "Normal")
+        self.assertEqual(game.blob_left.jelly_mode, "Normal")
+
+        new_mode = game.toggle_jelly_mode()
+        self.assertEqual(new_mode, "Extrem")
+        self.assertEqual(game.blob_left.jelly_mode, "Extrem")
+        self.assertEqual(game.blob_right.jelly_mode, "Extrem")
+
+        new_mode2 = game.toggle_jelly_mode()
+        self.assertEqual(new_mode2, "Normal")
+        self.assertEqual(game.blob_left.jelly_mode, "Normal")
+
 
 if __name__ == "__main__":
     unittest.main()

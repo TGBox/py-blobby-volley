@@ -3,6 +3,7 @@
 import math
 from typing import Tuple
 import pygame
+import pygame.gfxdraw
 from blobby_volley.constants import (
     VIRTUAL_WIDTH,
     VIRTUAL_HEIGHT,
@@ -159,20 +160,20 @@ class GameRenderer:
     def _render_shadows(self, blob_left: Blob, blob_right: Blob, ball: Ball) -> None:
         shadow_surf = pygame.Surface((VIRTUAL_WIDTH, VIRTUAL_HEIGHT), pygame.SRCALPHA)
 
-        # Left blob shadow
-        scale_l = max(0.6, 1.0 - (GROUND_Y - blob_left.y) / 400.0)
-        sw_l = int(BLOB_RADIUS * 2.2 * scale_l)
-        sh_l = int(14 * scale_l)
+        # Left blob shadow (scales with horizontal squish)
+        scale_l = max(0.5, 1.0 - (GROUND_Y - blob_left.y) / 400.0)
+        sw_l = int(BLOB_RADIUS * 2.2 * scale_l * blob_left.scale_x)
+        sh_l = int(14 * scale_l * max(0.5, 1.0 / blob_left.scale_x))
         pygame.draw.ellipse(
             shadow_surf,
             COLOR_SHADOW,
             (int(blob_left.x - sw_l / 2), int(GROUND_Y - sh_l / 2), sw_l, sh_l),
         )
 
-        # Right blob shadow
-        scale_r = max(0.6, 1.0 - (GROUND_Y - blob_right.y) / 400.0)
-        sw_r = int(BLOB_RADIUS * 2.2 * scale_r)
-        sh_r = int(14 * scale_r)
+        # Right blob shadow (scales with horizontal squish)
+        scale_r = max(0.5, 1.0 - (GROUND_Y - blob_right.y) / 400.0)
+        sw_r = int(BLOB_RADIUS * 2.2 * scale_r * blob_right.scale_x)
+        sh_r = int(14 * scale_r * max(0.5, 1.0 / blob_right.scale_x))
         pygame.draw.ellipse(
             shadow_surf,
             COLOR_SHADOW,
@@ -225,80 +226,196 @@ class GameRenderer:
             width=1,
         )
 
+    def _transform_blob_point(
+        self,
+        lx: float,
+        ly: float,
+        bx: float,
+        by: float,
+        scale_x: float,
+        scale_y: float,
+        cos_t: float,
+        sin_t: float,
+        impact_x: float,
+        impact_y: float,
+        total_h: float,
+    ) -> tuple[int, int]:
+        """Scale, lean/rotate, and apply impact dent relative to ground contact anchor."""
+        # 1. Scale around ground contact (0, 0)
+        sx = lx * scale_x
+        sy = ly * scale_y
+
+        # 2. Lean rotation around ground anchor
+        # ly <= 0, so when tilting right (sin_t > 0), top leans right (-sy * sin_t > 0)
+        rx = sx * cos_t - sy * sin_t
+        ry = sx * sin_t + sy * cos_t
+
+        # 3. Directional impact dent
+        h_ratio = min(1.0, max(0.0, -ly / total_h))
+        dent_weight = 0.15 + 0.85 * h_ratio
+        fx = bx + rx + impact_x * dent_weight
+        fy = by + ry + impact_y * dent_weight
+
+        return (int(round(fx)), int(round(fy)))
+
+    def _get_blob_polygon_points(
+        self, blob: Blob, inflate: float = 0.0
+    ) -> list[tuple[int, int]]:
+        """Generate smooth, closed perimeter points for squishy deformed blob contour."""
+        bx = blob.x
+        by = blob.y
+        r = BLOB_RADIUS + inflate
+        body_h = BLOB_BODY_HEIGHT + inflate
+        total_h = r + body_h
+
+        scale_x = blob.scale_x
+        scale_y = blob.scale_y
+        cos_t = math.cos(blob.tilt)
+        sin_t = math.sin(blob.tilt)
+        impact_x = blob.impact_x
+        impact_y = blob.impact_y
+
+        pts: list[tuple[int, int]] = []
+
+        # 1. Top dome arc (left to right, theta from pi to 0)
+        steps_dome = 20
+        for i in range(steps_dome + 1):
+            theta = math.pi - (i * math.pi / steps_dome)
+            lx = r * math.cos(theta)
+            ly = -body_h - r * math.sin(theta)
+            pts.append(
+                self._transform_blob_point(
+                    lx, ly, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+                )
+            )
+
+        # 2. Right wall down to corner
+        corner_r = 10.0 + inflate * 0.5
+        pts.append(
+            self._transform_blob_point(
+                r, -corner_r, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+            )
+        )
+
+        # 3. Bottom right corner arc (theta 0 to +pi/2, rounding down to ground)
+        corner_steps = 5
+        r_cx = r - corner_r
+        r_cy = -corner_r
+        for i in range(corner_steps + 1):
+            theta = i * (math.pi / 2.0) / corner_steps
+            lx = r_cx + corner_r * math.cos(theta)
+            ly = r_cy + corner_r * math.sin(theta)
+            pts.append(
+                self._transform_blob_point(
+                    lx, ly, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+                )
+            )
+
+        # 4. Bottom baseline across ground
+        pts.append(
+            self._transform_blob_point(
+                -r + corner_r, 0.0, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+            )
+        )
+
+        # 5. Bottom left corner arc (theta +pi/2 to +pi, rounding up from ground to left wall)
+        l_cx = -r + corner_r
+        l_cy = -corner_r
+        for i in range(corner_steps + 1):
+            theta = (math.pi / 2.0) + (i * (math.pi / 2.0) / corner_steps)
+            lx = l_cx + corner_r * math.cos(theta)
+            ly = l_cy + corner_r * math.sin(theta)
+            pts.append(
+                self._transform_blob_point(
+                    lx, ly, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+                )
+            )
+
+        # 6. Left wall up to dome
+        pts.append(
+            self._transform_blob_point(
+                -r, -body_h, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+            )
+        )
+
+        return pts
+
     def _render_blob(self, blob: Blob, is_left: bool, ball: Ball) -> None:
-        """Render a cute Blobby with procedural body, outline, two ball-tracking eyes and smile."""
+        """Render deformed squishy Blobby with anti-aliased contour, tracking eyes and smile."""
         color = COLOR_BLOB_LEFT if is_left else COLOR_BLOB_RIGHT
         color_dark = COLOR_BLOB_LEFT_DARK if is_left else COLOR_BLOB_RIGHT_DARK
 
-        bx = int(blob.x)
-        by = int(blob.y)
+        bx = blob.x
+        by = blob.y
+        scale_x = blob.scale_x
+        scale_y = blob.scale_y
+        cos_t = math.cos(blob.tilt)
+        sin_t = math.sin(blob.tilt)
+        impact_x = blob.impact_x
+        impact_y = blob.impact_y
+        total_h = BLOB_RADIUS + BLOB_BODY_HEIGHT
 
-        # Dome center
-        dome_y = by - BLOB_BODY_HEIGHT
-        r = BLOB_RADIUS
+        # 1. Darker outline polygon
+        outline_pts = self._get_blob_polygon_points(blob, inflate=2.5)
+        if len(outline_pts) >= 3:
+            pygame.gfxdraw.filled_polygon(self.virtual_surface, outline_pts, color_dark)
+            pygame.gfxdraw.aapolygon(self.virtual_surface, outline_pts, color_dark)
 
-        # Blob body outline (composite rounded shape)
-        body_rect = pygame.Rect(bx - r, dome_y, r * 2, BLOB_BODY_HEIGHT)
+        # 2. Inner filled blob polygon
+        inner_pts = self._get_blob_polygon_points(blob, inflate=0.0)
+        if len(inner_pts) >= 3:
+            pygame.gfxdraw.filled_polygon(self.virtual_surface, inner_pts, color)
+            pygame.gfxdraw.aapolygon(self.virtual_surface, inner_pts, color)
+            pygame.draw.polygon(self.virtual_surface, color_dark, inner_pts, width=1)
 
-        # Draw darker outline first for clean separation
-        pygame.draw.circle(self.virtual_surface, color_dark, (bx, dome_y), r + 2)
-        pygame.draw.rect(
-            self.virtual_surface,
-            color_dark,
-            (bx - r - 2, dome_y, (r + 2) * 2, BLOB_BODY_HEIGHT),
-            border_bottom_left_radius=14,
-            border_bottom_right_radius=14,
-        )
-
-        # Draw inner filled blob
-        pygame.draw.circle(self.virtual_surface, color, (bx, dome_y), r)
-        pygame.draw.rect(
-            self.virtual_surface,
-            color,
-            body_rect,
-            border_bottom_left_radius=12,
-            border_bottom_right_radius=12,
-        )
-
-        # Two ball-tracking eyes
-        # Eye positions relative to center dome: back eye and front eye
+        # 3. Two ball-tracking eyes on deformed head dome
         eye_sign = 1 if is_left else -1
-        eye_back_center = (bx - eye_sign * 5, dome_y - 2)
-        eye_front_center = (bx + eye_sign * 15, dome_y - 2)
-        eye_back_radius = int(r * 0.28)
-        eye_front_radius = int(r * 0.33)
+        eye_configs = [
+            (-eye_sign * 5, -BLOB_BODY_HEIGHT - 2, int(BLOB_RADIUS * 0.28)),
+            (eye_sign * 15, -BLOB_BODY_HEIGHT - 2, int(BLOB_RADIUS * 0.33)),
+        ]
 
-        # Draw both eyes
-        for ec_x, ec_y, er in [
-            (eye_back_center[0], eye_back_center[1], eye_back_radius),
-            (eye_front_center[0], eye_front_center[1], eye_front_radius),
-        ]:
-            # White eyeball
-            pygame.draw.circle(self.virtual_surface, COLOR_EYE_WHITE, (ec_x, ec_y), er)
-            pygame.draw.circle(self.virtual_surface, (50, 50, 50), (ec_x, ec_y), er, width=1)
+        for base_x, base_y, base_r in eye_configs:
+            ec_x, ec_y = self._transform_blob_point(
+                base_x, base_y, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+            )
 
-            # Pupil direction vector towards ball
+            er_x = max(2, int(round(base_r * scale_x)))
+            er_y = max(2, int(round(base_r * scale_y)))
+
+            # Eyeball ellipse
+            eye_rect = pygame.Rect(ec_x - er_x, ec_y - er_y, er_x * 2, er_y * 2)
+            pygame.draw.ellipse(self.virtual_surface, COLOR_EYE_WHITE, eye_rect)
+            pygame.draw.ellipse(self.virtual_surface, (50, 50, 50), eye_rect, width=1)
+
+            # Pupil tracking vector
             p_dx = ball.x - ec_x
             p_dy = ball.y - ec_y
             p_dist = math.hypot(p_dx, p_dy)
-            pupil_max_shift = er * 0.45
+            max_shift_x = er_x * 0.45
+            max_shift_y = er_y * 0.45
+
             if p_dist > 0.1:
-                p_shift_x = (p_dx / p_dist) * pupil_max_shift
-                p_shift_y = (p_dy / p_dist) * pupil_max_shift
+                p_shift_x = (p_dx / p_dist) * max_shift_x
+                p_shift_y = (p_dy / p_dist) * max_shift_y
             else:
                 p_shift_x, p_shift_y = 0.0, 0.0
 
-            pupil_x = int(ec_x + p_shift_x)
-            pupil_y = int(ec_y + p_shift_y)
-            pupil_r = max(2, int(er * 0.46))
+            pupil_x = int(round(ec_x + p_shift_x))
+            pupil_y = int(round(ec_y + p_shift_y))
+            pupil_r = max(2, int(round(min(er_x, er_y) * 0.48)))
             pygame.draw.circle(self.virtual_surface, COLOR_EYE_PUPIL, (pupil_x, pupil_y), pupil_r)
-            # Tiny white shine in pupil
             pygame.draw.circle(self.virtual_surface, (255, 255, 255), (pupil_x - 1, pupil_y - 1), 1)
 
-        # Subtle cheerful smile
-        mouth_x = bx + (eye_sign * 6)
-        mouth_y = dome_y + 16
-        mouth_rect = pygame.Rect(mouth_x - 7, mouth_y - 3, 14, 8)
+        # 4. Cheerful smile following facial deformation
+        mouth_base_x = eye_sign * 6
+        mouth_base_y = -BLOB_BODY_HEIGHT + 16
+        mouth_x, mouth_y = self._transform_blob_point(
+            mouth_base_x, mouth_base_y, bx, by, scale_x, scale_y, cos_t, sin_t, impact_x, impact_y, total_h
+        )
+        mw = max(4, int(round(14 * scale_x)))
+        mh = max(3, int(round(8 * scale_y)))
+        mouth_rect = pygame.Rect(mouth_x - mw // 2, mouth_y - mh // 2, mw, mh)
         pygame.draw.arc(self.virtual_surface, color_dark, mouth_rect, math.pi * 1.1, math.pi * 1.9, 2)
 
     def _render_ball(self, ball: Ball) -> None:

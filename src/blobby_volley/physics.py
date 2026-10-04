@@ -19,13 +19,14 @@ from blobby_volley.constants import (
     BALL_MIN_BOUNCE,
     BALL_RESTITUTION_WALL,
     BALL_RESTITUTION_NET,
+    JELLY_PROFILES,
 )
 
 
 class Blob:
-    """Represents a player blob with kinematic movement and jump physics."""
+    """Represents a player blob with kinematic movement, jump physics and spring-damper jelly deformation."""
 
-    def __init__(self, x: float, is_left: bool):
+    def __init__(self, x: float, is_left: bool, jelly_mode: str = "Normal"):
         self.x: float = x
         self.y: float = float(GROUND_Y)  # Bottom of the blob on the ground
         self.vx: float = 0.0
@@ -33,7 +34,16 @@ class Blob:
         self.is_left: bool = is_left
         self.is_grounded: bool = True
         self.touches: int = 0
-        self.squish: float = 1.0  # Visual squish factor for jump/landing bounce
+        self.jelly_mode: str = jelly_mode
+
+        # Spring-damper oscillator states (purely visual deformation)
+        self.squish_y: float = 0.0
+        self.squish_vy: float = 0.0
+        self.impact_x: float = 0.0
+        self.impact_y: float = 0.0
+        self.impact_vx: float = 0.0
+        self.impact_vy: float = 0.0
+        self.tilt: float = 0.0
 
         # Min and max horizontal bounds
         if is_left:
@@ -48,6 +58,22 @@ class Blob:
         """Center of the top spherical dome."""
         return (self.x, self.y - BLOB_BODY_HEIGHT)
 
+    @property
+    def scale_y(self) -> float:
+        """Vertical deformation scale factor with clamping."""
+        profile = JELLY_PROFILES.get(self.jelly_mode, JELLY_PROFILES["Normal"])
+        max_d = profile["max_deformation"]
+        val = max(-max_d, min(max_d, self.squish_y))
+        return max(0.25, 1.0 + val)
+
+    @property
+    def scale_x(self) -> float:
+        """Horizontal deformation scale preserving volume (Sx * Sy ~= 1)."""
+        return 1.0 / math.sqrt(self.scale_y)
+
+    def set_jelly_mode(self, mode: str) -> None:
+        self.jelly_mode = mode
+
     def reset_position(self, x: float) -> None:
         self.x = x
         self.y = float(GROUND_Y)
@@ -55,10 +81,31 @@ class Blob:
         self.vy = 0.0
         self.is_grounded = True
         self.touches = 0
-        self.squish = 1.0
+        self.squish_y = 0.0
+        self.squish_vy = 0.0
+        self.impact_x = 0.0
+        self.impact_y = 0.0
+        self.impact_vx = 0.0
+        self.impact_vy = 0.0
+        self.tilt = 0.0
+
+    def apply_impact(self, nx: float, ny: float, impact_speed: float) -> None:
+        """Apply directional elastic impulse when the ball strikes the blob."""
+        profile = JELLY_PROFILES.get(self.jelly_mode, JELLY_PROFILES["Normal"])
+        norm_speed = min(3.0, max(0.5, impact_speed / 240.0))
+        strength = profile["impact_strength"] * norm_speed
+
+        # Push inward in direction opposite to contact normal
+        self.impact_vx -= nx * strength * 180.0
+        self.impact_vy -= ny * strength * 180.0
+
+        # Vertical squish excitation
+        self.squish_vy += ny * strength * 15.0
 
     def update(self, dt: float, move_dir: float, jump_pressed: bool) -> None:
-        """Update blob position and velocity based on player input."""
+        """Update blob position, velocity, and spring-damper deformation."""
+        profile = JELLY_PROFILES.get(self.jelly_mode, JELLY_PROFILES["Normal"])
+
         # Horizontal movement
         self.vx = move_dir * BLOB_SPEED
         self.x += self.vx * dt
@@ -69,29 +116,48 @@ class Blob:
         elif self.x > self.max_x:
             self.x = self.max_x
 
-        # Jump initiation
+        # Jump initiation (triggers vertical stretch)
         if jump_pressed and self.is_grounded:
             self.vy = BLOB_JUMP_SPEED
             self.is_grounded = False
-            self.squish = 1.25
+            self.squish_vy += profile["jump_stretch"] * 24.0
 
         # Vertical gravity and integration
         if not self.is_grounded:
             self.vy += BLOB_GRAVITY * dt
             self.y += self.vy * dt
 
-            # Land on ground
+            # Land on ground (triggers landing squish)
             if self.y >= GROUND_Y:
                 self.y = float(GROUND_Y)
                 self.vy = 0.0
                 self.is_grounded = True
-                self.squish = 0.8  # Landing squish
+                self.squish_vy += profile["land_squash"] * 26.0
 
-        # Animate squish recovery back to 1.0
-        if abs(self.squish - 1.0) > 0.01:
-            self.squish += (1.0 - self.squish) * min(1.0, dt * 10.0)
-        else:
-            self.squish = 1.0
+        # Running tilt / lean
+        target_tilt = self.vx * profile["tilt_factor"]
+        self.tilt += (target_tilt - self.tilt) * min(1.0, dt * 16.0)
+
+        # Spring-damper integration for squish and impact dent
+        k = profile["stiffness"]
+        c = profile["damping"]
+
+        # Sub-step spring simulation for guaranteed numerical stability
+        sub_steps = 4
+        s_dt = dt / sub_steps
+        for _ in range(sub_steps):
+            # Vertical squish oscillator: F = -k*y - c*vy
+            ay = -k * self.squish_y - c * self.squish_vy
+            self.squish_vy += ay * s_dt
+            self.squish_y += self.squish_vy * s_dt
+
+            # Impact dent oscillator (x and y)
+            a_ix = -k * self.impact_x - c * self.impact_vx
+            a_iy = -k * self.impact_y - c * self.impact_vy
+            self.impact_vx += a_ix * s_dt
+            self.impact_vy += a_iy * s_dt
+            self.impact_x += self.impact_vx * s_dt
+            self.impact_y += self.impact_vy * s_dt
 
 
 class Ball:
@@ -306,6 +372,10 @@ class PhysicsWorld:
 
         # Only bounce if approaching
         if vel_norm < 0:
+            # Trigger squishy impact deformation on blob
+            impact_speed = max(180.0, abs(vel_norm))
+            blob.apply_impact(nx, ny, impact_speed)
+
             # Energetic bounce with player impulse transfer
             restitution = 1.08
             impulse = -(1.0 + restitution) * vel_norm

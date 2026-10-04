@@ -9,6 +9,7 @@ Eine leichtgewichtige, eigenständige und originalgetreue Python-Adaption des be
 ## Features
 
 - **Klassische Arcade-Physik**: Elastische Kugel-Kollision an Kopf und Körper der Blobs, dynamischer Netzabprall und Schwerkraft.
+- **Squishy Jelly-Deformation**: Organische Feder-Dämpfer-Physik für elastisches Wabbeln, Strecken beim Sprung, Stauchen bei Landung, Vorneigung beim Laufen und richtungsabhängige Einschlagdellen beim Balltreffer (inkl. Sondermodus *Extrem / Slime*).
 - **2 Spielmodi**:
   - **1 Spieler gegen Computer**: Intelligenter, vorausschauender KI-Gegner mit 3 Schwierigkeitsgraden (*Leicht*, *Mittel*, *Schwer*).
   - **2 Spieler lokal**: Gegeneinander an einer Tastatur im direkten Duell.
@@ -29,6 +30,7 @@ Eine leichtgewichtige, eigenständige und originalgetreue Python-Adaption des be
 
 ### Allgemeine Tasten
 
+- `J`: Jelly-Physik umschalten (*Normal* / *Extrem*)
 - `F11`: Vollbildmodus an- / ausschalten
 - `ESC`: Pause / Zurück zum Hauptmenü
 - `R`: Spiel neu starten

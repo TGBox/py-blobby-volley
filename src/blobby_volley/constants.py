@@ -20,6 +20,28 @@ BLOB_SPEED = 330.0        # Horizontal move speed in px/sec
 BLOB_JUMP_SPEED = -580.0  # Initial jump velocity in px/sec
 BLOB_GRAVITY = 1200.0     # Gravity acceleration for blobs
 
+# Jelly squish & spring-damper deformation profiles
+JELLY_PROFILES = {
+    "Normal": {
+        "stiffness": 160.0,       # Spring stiffness (k)
+        "damping": 14.0,          # Damping coefficient (c)
+        "jump_stretch": 0.30,     # Vertical elongation on jump
+        "land_squash": -0.35,     # Vertical compression on landing
+        "impact_strength": 0.35,  # Ball impact compression multiplier
+        "tilt_factor": 0.00036,   # Forward lean angle in radians per px/s
+        "max_deformation": 0.50,  # Clamp on deviation from 1.0
+    },
+    "Extrem": {
+        "stiffness": 80.0,        # Lower stiffness for softer jiggle
+        "damping": 5.5,           # Low damping for prolonged wobble
+        "jump_stretch": 0.55,     # Huge stretch
+        "land_squash": -0.55,     # Huge squash
+        "impact_strength": 0.70,  # Extreme impact dent
+        "tilt_factor": 0.00065,   # Heavy lean
+        "max_deformation": 0.75,  # Allows big elastic distortion
+    },
+}
+
 # Ball dimensions & physics
 BALL_RADIUS = 20
 BALL_GRAVITY = 680.0

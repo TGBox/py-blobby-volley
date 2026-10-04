@@ -82,12 +82,15 @@ class MenuScreen:
 
         self.difficulty_list = list(AI_DIFFICULTIES.keys())
         self.current_diff_idx = 1  # "Mittel" default
+        self.jelly_list = ["Normal", "Extrem"]
+        self.current_jelly_idx = 0
         self.selected_index = 0
 
         self.items = [
             "1 Spieler (vs. Computer)",
             "2 Spieler (Lokal)",
             "Schwierigkeit: Mittel",
+            "Jelly-Physik: Normal",
             "Steuerung anzeigen",
             "Beenden",
         ]
@@ -101,6 +104,15 @@ class MenuScreen:
         self.current_diff_idx = (self.current_diff_idx + 1) % len(self.difficulty_list)
         self.update_diff_text()
         return self.difficulty_list[self.current_diff_idx]
+
+    def update_jelly_text(self) -> None:
+        jelly = self.jelly_list[self.current_jelly_idx]
+        self.items[3] = f"Jelly-Physik: {jelly}"
+
+    def cycle_jelly(self) -> str:
+        self.current_jelly_idx = (self.current_jelly_idx + 1) % len(self.jelly_list)
+        self.update_jelly_text()
+        return self.jelly_list[self.current_jelly_idx]
 
     def render(self, surface: pygame.Surface) -> None:
         """Render stylish beach menu with buttons."""
@@ -117,20 +129,20 @@ class MenuScreen:
         cx = VIRTUAL_WIDTH // 2
         title_shadow = self.font_title.render(title_str, True, (20, 40, 60))
         title_text = self.font_title.render(title_str, True, (255, 230, 0))
-        surface.blit(title_shadow, title_shadow.get_rect(center=(cx + 3, 113)))
-        surface.blit(title_text, title_text.get_rect(center=(cx, 110)))
+        surface.blit(title_shadow, title_shadow.get_rect(center=(cx + 3, 103)))
+        surface.blit(title_text, title_text.get_rect(center=(cx, 100)))
 
         # Subtitle
         sub_text = self.font_info.render("Klassische Python-Adaption mit Pygame", True, (240, 245, 255))
-        surface.blit(sub_text, sub_text.get_rect(center=(cx, 160)))
+        surface.blit(sub_text, sub_text.get_rect(center=(cx, 146)))
 
         # Menu Buttons
-        btn_w, btn_h = 420, 48
-        start_y = 210
+        btn_w, btn_h = 420, 44
+        start_y = 180
 
         if not self.show_controls:
             for idx, item in enumerate(self.items):
-                by = start_y + idx * (btn_h + 14)
+                by = start_y + idx * (btn_h + 12)
                 rect = pygame.Rect(cx - btn_w // 2, by, btn_w, btn_h)
 
                 is_selected = idx == self.selected_index
@@ -151,10 +163,10 @@ class MenuScreen:
         # Footer hints
         footer_str = "Navigation: Pfeiltasten | Bestätigen: ENTER | Vollbild: F11"
         footer_text = self.font_info.render(footer_str, True, (220, 230, 240))
-        surface.blit(footer_text, footer_text.get_rect(center=(cx, VIRTUAL_HEIGHT - 30)))
+        surface.blit(footer_text, footer_text.get_rect(center=(cx, VIRTUAL_HEIGHT - 25)))
 
     def _render_controls_panel(self, surface: pygame.Surface, cx: int, y: int) -> None:
-        panel_w, panel_h = 580, 290
+        panel_w, panel_h = 620, 320
         panel_surf = pygame.Surface((panel_w, panel_h), pygame.SRCALPHA)
         pygame.draw.rect(panel_surf, (20, 35, 55, 240), (0, 0, panel_w, panel_h), border_radius=12)
         pygame.draw.rect(panel_surf, (255, 255, 255, 180), (0, 0, panel_w, panel_h), width=2, border_radius=12)
@@ -164,8 +176,9 @@ class MenuScreen:
             ("STEUERUNG", (255, 215, 0), self.font_btn),
             ("Spieler 1 (Grün):  A = Links,  D = Rechts,  W = Springen", COLOR_BLOB_LEFT, self.font_info),
             ("Spieler 2 (Rot):   Links,  Rechts,  Hoch = Springen", COLOR_BLOB_RIGHT, self.font_info),
-            ("Allgemein:", (255, 255, 255), self.font_info),
-            ("F11 = Vollbild an/aus  |  ESC = Pause / Menü  |  R = Neustart", (200, 220, 240), self.font_info),
+            ("Jelly-Deformation:", (255, 255, 255), self.font_info),
+            ("J = Verformung umschalten (Normal / Extrem)", (241, 196, 15), self.font_info),
+            ("Allgemein:  F11 = Vollbild  |  ESC = Pause / Menü  |  R = Neustart", (200, 220, 240), self.font_info),
             ("Drücke ENTER oder ESC zum Zurückkehren", (241, 196, 15), self.font_info),
         ]
 
@@ -188,12 +201,17 @@ def main() -> None:
 
     game: GameState | None = None
     app_state = "MENU"  # "MENU" or "PLAYING"
+    notification_text = ""
+    notification_timer = 0.0
 
     running = True
     while running:
         dt = clock.tick(TARGET_FPS) / 1000.0
         # Cap dt to prevent physics jumps if window is moved
         dt = min(dt, 0.05)
+
+        if notification_timer > 0.0:
+            notification_timer -= dt
 
         # 1. Event processing
         for event in pygame.event.get():
@@ -216,18 +234,30 @@ def main() -> None:
                             menu.selected_index = (menu.selected_index + 1) % len(menu.items)
                         elif event.key in (pygame.K_RETURN, pygame.K_SPACE):
                             idx = menu.selected_index
+                            jelly_mode = menu.jelly_list[menu.current_jelly_idx]
                             if idx == 0:  # 1 Player vs Bot
                                 diff = menu.difficulty_list[menu.current_diff_idx]
-                                game = GameState(mode="vs_bot", difficulty=diff, sound_manager=audio)
+                                game = GameState(
+                                    mode="vs_bot",
+                                    difficulty=diff,
+                                    jelly_mode=jelly_mode,
+                                    sound_manager=audio,
+                                )
                                 app_state = "PLAYING"
                             elif idx == 1:  # 2 Player Local
-                                game = GameState(mode="2p_local", sound_manager=audio)
+                                game = GameState(
+                                    mode="2p_local",
+                                    jelly_mode=jelly_mode,
+                                    sound_manager=audio,
+                                )
                                 app_state = "PLAYING"
                             elif idx == 2:  # Difficulty toggle
                                 menu.cycle_difficulty()
-                            elif idx == 3:  # Show controls
+                            elif idx == 3:  # Jelly physics toggle
+                                menu.cycle_jelly()
+                            elif idx == 4:  # Show controls
                                 menu.show_controls = True
-                            elif idx == 4:  # Exit
+                            elif idx == 5:  # Exit
                                 running = False
 
                 elif app_state == "PLAYING" and game is not None:
@@ -238,14 +268,20 @@ def main() -> None:
                             game.toggle_pause()
                     elif event.key == pygame.K_r:
                         game.restart_match()
+                    elif event.key == pygame.K_j:
+                        new_mode = game.toggle_jelly_mode()
+                        menu.current_jelly_idx = 1 if new_mode == "Extrem" else 0
+                        menu.update_jelly_text()
+                        notification_text = f"Jelly-Physik: {new_mode}"
+                        notification_timer = 1.5
 
             elif event.type == pygame.MOUSEMOTION and app_state == "MENU" and not menu.show_controls:
                 vx, vy = window.screen_to_virtual(*event.pos)
                 cx = VIRTUAL_WIDTH // 2
-                btn_w, btn_h = 420, 48
-                start_y = 210
+                btn_w, btn_h = 420, 44
+                start_y = 180
                 for idx in range(len(menu.items)):
-                    by = start_y + idx * (btn_h + 14)
+                    by = start_y + idx * (btn_h + 12)
                     if (cx - btn_w // 2 <= vx <= cx + btn_w // 2) and (by <= vy <= by + btn_h):
                         menu.selected_index = idx
                         break
@@ -256,24 +292,36 @@ def main() -> None:
                 else:
                     vx, vy = window.screen_to_virtual(*event.pos)
                     cx = VIRTUAL_WIDTH // 2
-                    btn_w, btn_h = 420, 48
-                    start_y = 210
+                    btn_w, btn_h = 420, 44
+                    start_y = 180
                     for idx in range(len(menu.items)):
-                        by = start_y + idx * (btn_h + 14)
+                        by = start_y + idx * (btn_h + 12)
                         if (cx - btn_w // 2 <= vx <= cx + btn_w // 2) and (by <= vy <= by + btn_h):
                             menu.selected_index = idx
+                            jelly_mode = menu.jelly_list[menu.current_jelly_idx]
                             if idx == 0:
                                 diff = menu.difficulty_list[menu.current_diff_idx]
-                                game = GameState(mode="vs_bot", difficulty=diff, sound_manager=audio)
+                                game = GameState(
+                                    mode="vs_bot",
+                                    difficulty=diff,
+                                    jelly_mode=jelly_mode,
+                                    sound_manager=audio,
+                                )
                                 app_state = "PLAYING"
                             elif idx == 1:
-                                game = GameState(mode="2p_local", sound_manager=audio)
+                                game = GameState(
+                                    mode="2p_local",
+                                    jelly_mode=jelly_mode,
+                                    sound_manager=audio,
+                                )
                                 app_state = "PLAYING"
                             elif idx == 2:
                                 menu.cycle_difficulty()
                             elif idx == 3:
-                                menu.show_controls = True
+                                menu.cycle_jelly()
                             elif idx == 4:
+                                menu.show_controls = True
+                            elif idx == 5:
                                 running = False
                             break
 
@@ -320,6 +368,17 @@ def main() -> None:
                 winner=game.winner,
                 paused=game.paused,
             )
+
+            # Transient notification banner for mode changes (e.g. key 'J')
+            if notification_timer > 0.0:
+                alpha = min(255, int(notification_timer * 220))
+                notif_surf = pygame.Surface((280, 36), pygame.SRCALPHA)
+                pygame.draw.rect(notif_surf, (20, 30, 45, min(220, alpha)), (0, 0, 280, 36), border_radius=8)
+                pygame.draw.rect(notif_surf, (241, 196, 15, alpha), (0, 0, 280, 36), width=2, border_radius=8)
+                txt = renderer.font_medium.render(notification_text, True, (255, 255, 255))
+                notif_surf.blit(txt, txt.get_rect(center=(140, 18)))
+                frame.blit(notif_surf, ((VIRTUAL_WIDTH - 280) // 2, 90))
+
             window.present(frame)
 
     pygame.quit()
