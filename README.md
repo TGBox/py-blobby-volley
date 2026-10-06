@@ -2,8 +2,6 @@
 
 Eine leichtgewichtige, eigenständige und originalgetreue Python-Adaption des beliebten Mini-Game-Klassikers **Blobby Volley**, umgesetzt mit `pygame-ce`.
 
-![Blobby Volley Gameplay Preview](preview.png)
-
 ---
 
 ## Features
